@@ -1,0 +1,50 @@
+name: Build APK (HTML -> Cordova)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Cordova
+        run: npm i -g cordova
+
+      - name: Create Cordova project (if missing)
+        run: |
+          if [ ! -f config.xml ]; then
+            cordova create . com.example.htmlgame HtmlGame
+          fi
+
+      - name: Copy web to Cordova www
+        run: |
+          rm -rf www
+          cp -r ./www ./www || true
+
+      - name: Add Android platform
+        run: |
+          cordova platform add android@latest || true
+
+      - name: Build Debug APK
+        run: cordova build android
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: platforms/android/app/build/outputs/apk/debug/*.apk
