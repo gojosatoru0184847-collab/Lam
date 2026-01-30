@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>AOSZ Canvas</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;background:#000}
+canvas{width:100%;height:100%;display:block}
+</style>
+</head>
+<body>
+<canvas id="cv" width="1280" height="720"></canvas>
+<script>
+const c=document.getElementById('cv'),x=c.getContext('2d');
+let t=0;
+function loop(){
+ t+=0.016;
+ x.fillStyle='black';x.fillRect(0,0,c.width,c.height);
+ x.fillStyle='white';x.font='28px system-ui';
+ x.fillText('Anger of Stick: Zombie – HTML demo merged',40,80);
+ x.fillText('Replace web/index_game.html with full HTML logic',40,130);
+ requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
