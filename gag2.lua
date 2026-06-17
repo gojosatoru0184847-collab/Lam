@@ -310,8 +310,8 @@ end
 
 local function getDelay(cfgKey)
     local cfg = CFG[cfgKey] or CFG.plant
-    local base = state.turboMode and cfg.base * 0.5 or cfg.base
-    return AntiBan:rDelay(base, cfg.var)
+    local base = state.turboMode and cfg[1] * 0.5 or cfg[1]
+    return AntiBan:rDelay(base, cfg[2])
 end
 
 local function getWeather()
