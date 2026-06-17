@@ -125,26 +125,15 @@ local state = {
     autoBuild = false, autoShopBuy = false, autoShopSell = false,
     autoInventoryManage = false, autoStorageOrganize = false,
     -- === MENU 7: CÀI ĐẶT & TÍCH HỢP (ĐỘC QUYỀN) ===
+    performanceMode = false, autoServerHop = false, autoRejoin = false,
+    autoBlueprint = false, autoExpFarm = false, autoTicketFarm = false, 
+    autoBountyHunt = false, autoRaidFarm = false, autoAuraEquip = false,
+    autoTitleEquip = false, autoGachaRoll = false, autoMailClaim = false,
+    autoFriendBoost = false, autoSellTrash = false,
     turboMode = false, sneakyMode = false, smartCrop = false,
     espEnabled = false, speedEnabled = false, jumpEnabled = false,
     noClip = false, antiAFK = false, farmLoop = false,
-    -- === TÍNH NĂNG ĐỘC QUYỀN MỚI ===
-    autoCrossBreed = false,      -- Ghép lai cây tạo giống mới
-    autoMarketAnalysis = false,   -- Phân tích giá cả thị trường để bán có lời
-    autoOptimalPlant = false,     -- Tự động tìm vị trí trồng tối ưu
-    autoSeasonRotation = false,   -- Luân chuyển mùa vụ theo mùa trong game
     autoAdminEvade = false,       -- Trốn admin siêu tốc (tự động ngắt script khi admin xuất hiện)
-    autoGiftSend = false,         -- Tự động tặng quà cho bạn bè (tăng điểm xã hội)
-    autoChatPromo = false,        -- Tự động chat quảng cáo guild
-    autoSoilManagement = false,   -- Quản lý độ phì nhiêu của đất
-    autoNPCTrade = false,         -- Tự động giao dịch với NPC để kiếm lợi nhuận
-    autoMiniGame = false,         -- Tự động tham gia mini game sự kiện
-    autoPetEvolution = false,     -- Tự động tiến hóa pet khi đủ điều kiện
-    autoResourceCollect = false,  -- Thu thập tài nguyên rải rác trên map
-    autoAchievement = false,      -- Tự động hoàn thành thành tựu
-    autoFriendFarm = false,       -- Tự động farm cùng bạn bè (trợ giúp)
-    autoTradeProfit = false,      -- Tự động tìm giao dịch có lợi nhất
-    autoCropAnalyze = false,      -- Phân tích cây trồng để tối ưu hóa lợi nhuận
     -- === THAM SỐ ===
     farmRadius = 80, sneakRadius = 20, speedBase = 40, jumpBase = 100,
     preferredMutation = "Bloodlit",
@@ -162,9 +151,6 @@ local CFG = {
     guild={.5,.2}, clan={.6,.2}, event={.5,.2}, quest={.6,.25},
     trade={.25,.15}, boss={.5,.2}, merge={.3,.15}, build={.4,.2},
     steal={.3,.15}, defense={.4,.2}, gear={.4,.2}, weather={.3,.15},
-    cross={.6,.25}, market={1.0,.3}, optimal={.8,.2}, season={.7,.2},
-    soil={.5,.2}, npc={.8,.25}, minigame={.6,.2}, evolution={.5,.2},
-    resource={.4,.2}, achievement={.3,.15}, friend={.5,.2}, profit={.6,.2}
 }
 
 -- ========================================================================
@@ -183,6 +169,14 @@ local function getRemote(name)
     return ev
 end
 
+local function firePrompt(prompt)
+    if fireproximityprompt then
+        fireproximityprompt(prompt)
+    else
+        prompt.InputHoldEnd:Fire()
+    end
+end
+
 local objectCache = {}
 local cacheTime = 0
 local function findObjs(pattern, radius)
@@ -191,7 +185,7 @@ local function findObjs(pattern, radius)
     if now - cacheTime < 0.5 and objectCache[pattern] then return objectCache[pattern] end
     local list = {}
     for _, o in ipairs(Workspace:GetDescendants()) do
-        if o:IsA("BasePart") and o.Name:match(pattern) then
+        if o:IsA("BasePart") and o.Name:match(pattern) and o.Parent then
             local d = (RootPart.Position - o.Position).Magnitude
             if d <= radius then table.insert(list, o) end
         end
@@ -204,10 +198,15 @@ end
 local function getClosest(pattern, radius)
     local list = findObjs(pattern, radius)
     if #list == 0 then return nil end
-    table.sort(list, function(a,b)
-        return (RootPart.Position - a.Position).Magnitude < (RootPart.Position - b.Position).Magnitude
-    end)
-    return list[1]
+    local closest = nil
+    local minDist = math.huge
+    for _, obj in ipairs(list) do
+        if obj and obj.Parent then
+            local d = (RootPart.Position - obj.Position).Magnitude
+            if d < minDist then minDist = d; closest = obj end
+        end
+    end
+    return closest
 end
 
 local function getPlayersNear(radius)
@@ -295,231 +294,17 @@ end
 --  TÍNH NĂNG ĐỘC QUYỀN MỚI
 -- ========================================================================
 
--- 1. AUTO CROSS-BREEDING (GHÉP LAI)
-local function autoCrossBreedCycle()
-    runLoop('autoCrossBreed', function()
-        local plant1 = getClosest("Plant", state.farmRadius)
-        local plant2 = getClosest("Plant", state.farmRadius, true) -- cây thứ hai khác loại
-        if plant1 and plant2 and plant1 ~= plant2 then
-            local rem = getRemote("CrossBreed")
-            if rem then
-                rem:FireServer({Plant1 = plant1, Plant2 = plant2})
-                task.wait(AntiBan:getMicroDelay(getDelay("cross")))
-            end
-        end
-    end)
-end
-
--- 2. AUTO MARKET ANALYSIS (PHÂN TÍCH THỊ TRƯỜNG)
-local marketData = {}
-local function autoMarketAnalysisCycle()
-    runLoop('autoMarketAnalysis', function()
-        local rem = getRemote("Market")
-        if rem then
-            rem:FireServer({Action = "GetPrices"})
-            task.wait(AntiBan:getMicroDelay(0.5))
-            -- Giả lập phân tích và quyết định bán
-            local crop = getClosest("Crop", state.farmRadius)
-            if crop and crop:FindFirstChild("Price") then
-                local price = crop.Price.Value
-                if price > 100 then -- ngưỡng bán
-                    local sellRem = getRemote("Sell")
-                    if sellRem then sellRem:FireServer({Item = crop, Price = price}) end
-                end
-            end
-        end
-        task.wait(AntiBan:getMicroDelay(state.marketInterval))
-    end)
-end
-
--- 3. AUTO OPTIMAL PLANTING (VỊ TRÍ TRỒNG TỐI ƯU)
-local function autoOptimalPlantCycle()
-    runLoop('autoOptimalPlant', function()
-        local plots = findObjs("Plot", 999)
-        local bestPlot = nil
-        local bestScore = -1
-        for _, plot in ipairs(plots) do
-            -- Tính khoảng cách đến các cây khác và chất lượng đất
-            local score = math.random(1, 100) -- thực tế cần tính toán phức tạp
-            if score > bestScore then bestScore = score; bestPlot = plot end
-        end
-        if bestPlot then
-            RootPart.CFrame = bestPlot.CFrame + Vector3.new(0, 3, 0)
-            task.wait(0.5)
-        end
-    end)
-end
-
--- 4. AUTO SEASON ROTATION (LUÂN CHUYỂN MÙA VỤ)
-local seasonCrops = {Spring = "Strawberry", Summer = "Corn", Autumn = "Pumpkin", Winter = "Wheat"}
-local function autoSeasonRotationCycle()
-    runLoop('autoSeasonRotation', function()
-        local season = getSeason()
-        local crop = seasonCrops[season] or "Wheat"
-        local rem = getRemote("Buy")
-        if rem then rem:FireServer({Item = crop, Qty = 10}) end
-        task.wait(AntiBan:getMicroDelay(getDelay("season")))
-    end)
-end
-
--- 5. AUTO ADMIN EVADE (TRỐN ADMIN)
+-- 1. AUTO ADMIN EVADE (TRỐN ADMIN AN TOÀN)
 local function autoAdminEvadeCycle()
     runLoop('autoAdminEvade', function()
         if AntiBan.adminNear then
             -- Tắt tất cả và tạm dừng
             for k, v in pairs(state) do if type(v) == "boolean" then state[k] = false end end
             if screenGui then screenGui.Enabled = false end
-            -- Di chuyển đến góc bản đồ
-            local target = CFrame.new(-1000, 10, -1000)
-            TweenS:Create(RootPart, TweenInfo.new(1, Enum.EasingStyle.Sine), {CFrame = target}):Play()
-            task.wait(2)
-            if screenGui then screenGui.Enabled = true end
+            -- Tự động kick để bảo toàn nick thay vì trốn góc lag dễ bị phát hiện
+            Player:Kick("Phát hiện Admin/Staff! Tự động thoát để bảo vệ tài khoản.")
         end
         task.wait(1)
-    end)
-end
-
--- 6. AUTO GIFT SENDING (TẶNG QUÀ TỰ ĐỘNG)
-local function autoGiftSendCycle()
-    runLoop('autoGiftSend', function()
-        local target = state.giftTarget or getClosest("Friend", 50) -- giả định
-        if target then
-            local rem = getRemote("SendGift")
-            if rem then rem:FireServer({Target = target, Gift = "Seed"}) end
-            task.wait(AntiBan:getMicroDelay(getDelay("gift")))
-        end
-        task.wait(10)
-    end)
-end
-
--- 7. AUTO CHAT PROMO (QUẢNG CÁO GUILD)
-local function autoChatPromoCycle()
-    runLoop('autoChatPromo', function()
-        Chat:SendMessage(state.chatPromoMessage)
-        task.wait(AntiBan:getMicroDelay(30))
-    end)
-end
-
--- 8. AUTO SOIL MANAGEMENT (QUẢN LÝ ĐẤT)
-local function autoSoilManagementCycle()
-    runLoop('autoSoilManagement', function()
-        local plot = getClosest("Plot", state.farmRadius)
-        if plot and plot:FindFirstChild("Fertility") and plot.Fertility.Value < 50 then
-            local rem = getRemote("FertilizeSoil")
-            if rem then rem:FireServer({Plot = plot, Type = "Compost"}) end
-            task.wait(AntiBan:getMicroDelay(getDelay("soil")))
-        end
-    end)
-end
-
--- 9. AUTO NPC TRADE (GIAO DỊCH NPC)
-local function autoNPCTradeCycle()
-    runLoop('autoNPCTrade', function()
-        local npc = getClosest("NPC", 30)
-        if npc then
-            local rem = getRemote("NPCTrade")
-            if rem then rem:FireServer({NPC = npc, Action = "Buy"}) end
-            task.wait(AntiBan:getMicroDelay(getDelay("npc")))
-        end
-    end)
-end
-
--- 10. AUTO MINI-GAME (THAM GIA MINI GAME)
-local function autoMiniGameCycle()
-    runLoop('autoMiniGame', function()
-        local mg = getClosest("MiniGame", 50)
-        if mg then
-            local rem = getRemote("JoinMiniGame")
-            if rem then rem:FireServer(mg) end
-            task.wait(AntiBan:getMicroDelay(getDelay("minigame")))
-            -- Tự động chơi (giả lập)
-            for i = 1, 5 do
-                local rem2 = getRemote("MiniGameAction")
-                if rem2 then rem2:FireServer({Action = "Click"}) end
-                task.wait(AntiBan:getMicroDelay(0.5))
-            end
-        end
-    end)
-end
-
--- 11. AUTO PET EVOLUTION (TIẾN HÓA PET)
-local function autoPetEvolutionCycle()
-    runLoop('autoPetEvolution', function()
-        local pet = getClosest("Pet", 20)
-        if pet and pet:FindFirstChild("Level") and pet.Level.Value >= 10 then
-            local rem = getRemote("EvolvePet")
-            if rem then rem:FireServer({Pet = pet}) end
-            task.wait(AntiBan:getMicroDelay(getDelay("evolution")))
-        end
-    end)
-end
-
--- 12. AUTO RESOURCE COLLECT (THU THẬP TÀI NGUYÊN)
-local function autoResourceCollectCycle()
-    runLoop('autoResourceCollect', function()
-        local res = getClosest("Resource|Wood|Stone|Berry", state.farmRadius)
-        if res then
-            local rem = getRemote("CollectResource")
-            if rem then rem:FireServer(res) end
-            task.wait(AntiBan:getMicroDelay(getDelay("resource")))
-        end
-    end)
-end
-
--- 13. AUTO ACHIEVEMENT (TỰ ĐỘNG HOÀN THÀNH THÀNH TỰU)
-local function autoAchievementCycle()
-    runLoop('autoAchievement', function()
-        local rem = getRemote("Achievement")
-        if rem then
-            rem:FireServer({Action = "CheckAll"})
-            task.wait(AntiBan:getMicroDelay(getDelay("achievement")))
-            -- Nếu có thể nhận thưởng, tự động nhận
-            rem:FireServer({Action = "ClaimAll"})
-            task.wait(AntiBan:getMicroDelay(0.5))
-        end
-        task.wait(30)
-    end)
-end
-
--- 14. AUTO FRIEND FARM (FARM CÙNG BẠN BÈ)
-local function autoFriendFarmCycle()
-    runLoop('autoFriendFarm', function()
-        local friends = getPlayersNear(50)
-        for _, f in ipairs(friends) do
-            if f.Character and f.Character:FindFirstChild("HumanoidRootPart") then
-                local rem = getRemote("FriendBoost")
-                if rem then rem:FireServer({Friend = f, Boost = "Growth"}) end
-                task.wait(AntiBan:getMicroDelay(getDelay("friend")))
-            end
-        end
-    end)
-end
-
--- 15. AUTO TRADE PROFIT (GIAO DỊCH CÓ LỢI NHUẬN)
-local function autoTradeProfitCycle()
-    runLoop('autoTradeProfit', function()
-        local rem = getRemote("Trade")
-        if rem then
-            -- Lấy danh sách giao dịch, chọn giao dịch có lợi nhất
-            rem:FireServer({Action = "List"})
-            task.wait(AntiBan:getMicroDelay(0.5))
-            -- Giả lập chọn và thực hiện
-            rem:FireServer({Action = "Accept", TradeID = math.random(1, 10)})
-            task.wait(AntiBan:getMicroDelay(getDelay("profit")))
-        end
-        task.wait(10)
-    end)
-end
-
--- 16. AUTO CROP ANALYZE (PHÂN TÍCH CÂY TRỒNG)
-local function autoCropAnalyzeCycle()
-    runLoop('autoCropAnalyze', function()
-        local plant = getClosest("Plant", state.farmRadius)
-        if plant then
-            local rem = getRemote("AnalyzeCrop")
-            if rem then rem:FireServer({Plant = plant}) end
-            task.wait(AntiBan:getMicroDelay(getDelay("market")))
-        end
     end)
 end
 
@@ -617,23 +402,210 @@ local functionHandlers = {
             end
         end
     end) end,
+    autoOpenChests = function() runLoop('autoOpenChests', function()
+        local chest = getClosest("Chest|Crate|GiftBox|Reward", state.farmRadius * 2)
+        if chest then
+            local prompt = chest:FindFirstChildWhichIsA("ProximityPrompt", true)
+            if prompt then
+                firePrompt(prompt)
+            else
+                local rem = getRemote("OpenChest") or getRemote("ClaimReward")
+                if rem then rem:FireServer(chest) end
+            end
+            task.wait(AntiBan:getMicroDelay(1))
+        end
+    end) end,
+    autoFish = function() runLoop('autoFish', function()
+        local rod = Player.Backpack:FindFirstChild("FishingRod") or Character:FindFirstChild("FishingRod")
+        if rod then
+            if rod.Parent ~= Character then
+                Humanoid:EquipTool(rod)
+                task.wait(0.5)
+            end
+            local water = getClosest("Water|Pond|Lake|Ocean", 150)
+            if water then
+                local rem = getRemote("FishCast") or rod:FindFirstChild("CastRemote")
+                if rem then rem:FireServer(water.Position) end
+            end
+        end
+        task.wait(AntiBan:getMicroDelay(getDelay("fish")))
+    end) end,
+    autoCraft = function() runLoop('autoCraft', function()
+        local rem = getRemote("Craft") or getRemote("Crafting")
+        if rem then
+            -- Giả lập chế tạo vật phẩm cơ bản (Ví dụ: Fertilizer)
+            rem:FireServer({Recipe = "Fertilizer", Amount = 1})
+            task.wait(AntiBan:getMicroDelay(getDelay("craft")))
+        end
+    end) end,
+    autoGift = function() runLoop('autoGift', function()
+        local rem = getRemote("ClaimGift") or getRemote("DailyReward") or getRemote("Reward")
+        if rem then
+            rem:FireServer({Action = "Claim"})
+        end
+        task.wait(AntiBan:getMicroDelay(5)) -- Tránh spam quá nhanh
+    end) end,
+    autoPetFeed = function() runLoop('autoPetFeed', function()
+        local pet = getClosest("Pet", 50)
+        if pet and pet:FindFirstChild("Hunger") and pet.Hunger.Value < 50 then
+            local food = Player.Backpack:FindFirstChild("PetFood") or Player.Backpack:FindFirstChild("Thức ăn")
+            if food then
+                local rem = getRemote("FeedPet") or getRemote("InteractPet")
+                if rem then rem:FireServer(pet, food) end
+            end
+        end
+        task.wait(AntiBan:getMicroDelay(2))
+    end) end,
+    autoMine = function() runLoop('autoMine', function()
+        local pickaxe = Player.Backpack:FindFirstChild("Pickaxe") or Player.Backpack:FindFirstChild("Cúp") or Character:FindFirstChild("Pickaxe")
+        if pickaxe then
+            if pickaxe.Parent ~= Character then Humanoid:EquipTool(pickaxe); task.wait(0.5) end
+            local ore = getClosest("Ore|Rock|Stone|Crystal", 50)
+            if ore then
+                local rem = getRemote("Mine") or getRemote("HitOre") or pickaxe:FindFirstChild("MineRemote")
+                if rem then rem:FireServer(ore) end
+            end
+        end
+        task.wait(AntiBan:getMicroDelay(getDelay("mine")))
+    end) end,
+    autoBattle = function() runLoop('autoBattle', function()
+        local weapon = Player.Backpack:FindFirstChild("Sword") or Player.Backpack:FindFirstChild("Weapon") or Character:FindFirstChild("Sword")
+        if weapon then
+            if weapon.Parent ~= Character then Humanoid:EquipTool(weapon); task.wait(0.5) end
+            local mob = getClosest("Mob|Enemy|Slime|Goblin|Quái", 40)
+            if mob and mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 then
+                local rem = getRemote("Attack") or getRemote("Combat") or weapon:FindFirstChild("AttackRemote")
+                if rem then rem:FireServer(mob) end
+            end
+        end
+        task.wait(AntiBan:getMicroDelay(getDelay("battle")))
+    end) end,
+    autoBoss = function() runLoop('autoBoss', function()
+        local weapon = Player.Backpack:FindFirstChild("Sword") or Character:FindFirstChild("Sword")
+        if weapon then
+            if weapon.Parent ~= Character then Humanoid:EquipTool(weapon); task.wait(0.5) end
+            local boss = getClosest("Boss|Dragon|Giant|Titan", 150)
+            if boss and boss:FindFirstChild("Humanoid") and boss.Humanoid.Health > 0 then
+                local rem = getRemote("Attack") or getRemote("BossAttack")
+                if rem then rem:FireServer(boss) end
+            end
+        end
+        task.wait(AntiBan:getMicroDelay(getDelay("boss")))
+    end) end,
+    autoSpin = function() runLoop('autoSpin', function()
+        local rem = getRemote("SpinWheel") or getRemote("Spin") or getRemote("DailySpin")
+        if rem then rem:FireServer() end
+        task.wait(AntiBan:getMicroDelay(15))
+    end) end,
+    autoPetTame = function() runLoop('autoPetTame', function()
+        local wildPet = getClosest("Wild|Animal|Stray", 40)
+        if wildPet then
+            local rem = getRemote("Tame") or getRemote("CatchPet") or getRemote("ThuầnHóa")
+            if rem then rem:FireServer(wildPet) end
+            task.wait(AntiBan:getMicroDelay(getDelay("pet")))
+        end
+    end) end,
+    autoStorage = function() runLoop('autoStorage', function()
+        local rem = getRemote("DepositAll") or getRemote("StoreItems") or getRemote("CấtKho")
+        if rem then rem:FireServer() end
+        task.wait(AntiBan:getMicroDelay(getDelay("storage")))
+    end) end,
+    autoGuildContribute = function() runLoop('autoGuildContribute', function()
+        local rem = getRemote("GuildContribute") or getRemote("GuildDonate")
+        if rem then rem:FireServer({Amount = 100, Type = "Coins"}) end
+        task.wait(AntiBan:getMicroDelay(getDelay("guild")))
+    end) end,
+    autoQuest = function() runLoop('autoQuest', function()
+        local remClaim = getRemote("ClaimQuest") or getRemote("CompleteQuest")
+        if remClaim then remClaim:FireServer() end
+        
+        local remAccept = getRemote("AcceptQuest") or getRemote("GetQuest")
+        if remAccept then remAccept:FireServer() end
+        task.wait(AntiBan:getMicroDelay(getDelay("quest")))
+    end) end,
+    autoShopSell = function() runLoop('autoShopSell', function()
+        local rem = getRemote("ShopSellAll") or getRemote("SellInventory")
+        if rem then rem:FireServer() end
+        task.wait(AntiBan:getMicroDelay(getDelay("sell")))
+    end) end,
+    autoNightSteal = function() runLoop('autoNightSteal', function()
+        if not isNight() then task.wait(5); return end
+        local targetPlot = getClosest("OtherPlot|EnemyPlot|Plot", 150)
+        if targetPlot and targetPlot.Parent ~= Player.Character then
+            local crop = targetPlot:FindFirstChild("Crop") or targetPlot:FindFirstChild("Plant")
+            if crop and crop:FindFirstChild("Harvestable") and crop.Harvestable.Value then
+                local rem = getRemote("Steal") or getRemote("HarvestOther")
+                if rem then rem:FireServer(crop) end
+            end
+        end
+        task.wait(AntiBan:getMicroDelay(getDelay("steal")))
+    end) end,
+    -- Liên kết các tính năng đồng dạng để tối ưu mã
+    autoDailyReward = function() state.autoGift = state.autoDailyReward; if state.autoGift then functionHandlers.autoGift() end end,
+    autoEventFarm = function() state.autoPlant = state.autoEventFarm; state.autoHarvest = state.autoEventFarm; if state.autoPlant then functionHandlers.autoPlant(); functionHandlers.autoHarvest() end end,
+    autoClanContribute = function() state.autoGuildContribute = state.autoClanContribute; if state.autoGuildContribute then functionHandlers.autoGuildContribute() end end,
+    
+    -- ==========================================
+    -- CÁC HANDLER BỔ SUNG ĐỂ HOÀN THIỆN 100% MENU
+    -- ==========================================
+    autoPet = function() state.autoPetTame = state.autoPet; if state.autoPet then functionHandlers.autoPetTame() end end,
+    autoRestock = function() state.autoBuy = state.autoRestock; if state.autoBuy then functionHandlers.autoBuy() end end,
+    autoCropSelect = function() state.smartCrop = state.autoCropSelect end,
+    autoGuildQuest = function() runLoop('autoGuildQuest', function() local r = getRemote("GuildQuest"); if r then r:FireServer("Complete") end; task.wait(5) end) end,
+    autoWeeklyQuest = function() runLoop('autoWeeklyQuest', function() local r = getRemote("WeeklyQuest"); if r then r:FireServer("Complete") end; task.wait(5) end) end,
+    autoTournament = function() runLoop('autoTournament', function() local r = getRemote("Tournament"); if r then r:FireServer("Join") end; task.wait(20) end) end,
+    autoLeaderboard = function() runLoop('autoLeaderboard', function() local r = getRemote("LeaderboardReward"); if r then r:FireServer("Claim") end; task.wait(30) end) end,
+    autoChallenge = function() runLoop('autoChallenge', function() local r = getRemote("Challenge"); if r then r:FireServer("Accept") end; task.wait(10) end) end,
+    autoClanWar = function() runLoop('autoClanWar', function() local r = getRemote("ClanWar"); if r then r:FireServer("Join") end; task.wait(30) end) end,
+    autoRainbowSeed = function() runLoop('autoRainbowSeed', function() local r = getRemote("PlantSpecial"); if r then r:FireServer("Rainbow") end; task.wait(5) end) end,
+    autoGoldSeed = function() runLoop('autoGoldSeed', function() local r = getRemote("PlantSpecial"); if r then r:FireServer("Gold") end; task.wait(5) end) end,
+    autoMutationPriority = function() runLoop('autoMutationPriority', function() local r = getRemote("SetMutation"); if r then r:FireServer(state.preferredMutation) end; task.wait(10) end) end,
+    autoWeatherSwitch = function() runLoop('autoWeatherSwitch', function() local r = getRemote("ChangeWeather"); if r then r:FireServer("Rain") end; task.wait(30) end) end,
+    autoElectricFarm = function() state.autoPlant = state.autoElectricFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
+    autoFrozenFarm = function() state.autoPlant = state.autoFrozenFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
+    autoRainbowFarm = function() state.autoPlant = state.autoRainbowFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
+    autoStarstruckFarm = function() state.autoPlant = state.autoStarstruckFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
+    autoBloodlitFarm = function() state.autoPlant = state.autoBloodlitFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
+    autoMidasFarm = function() state.autoPlant = state.autoMidasFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
+    autoPetBuff = function() runLoop('autoPetBuff', function() local r = getRemote("PetBuff"); if r then r:FireServer() end; task.wait(15) end) end,
+    autoPetLevel = function() runLoop('autoPetLevel', function() local r = getRemote("UpgradePet"); if r then r:FireServer() end; task.wait(5) end) end,
+    autoPetEvolve = function() runLoop('autoPetEvolve', function() local r = getRemote("EvolvePet"); if r then r:FireServer() end; task.wait(10) end) end,
+    autoPetEvolution = function() state.autoPetEvolve = state.autoPetEvolution; if state.autoPetEvolve then functionHandlers.autoPetEvolve() end end,
+    autoGear = function() runLoop('autoGear', function() local r = getRemote("ClaimGear"); if r then r:FireServer() end; task.wait(20) end) end,
+    autoGearEquip = function() runLoop('autoGearEquip', function() local r = getRemote("EquipBestGear"); if r then r:FireServer() end; task.wait(5) end) end,
+    autoGearUpgrade = function() runLoop('autoGearUpgrade', function() local r = getRemote("UpgradeGear"); if r then r:FireServer("Max") end; task.wait(5) end) end,
+    autoSprinkler = function() runLoop('autoSprinkler', function() local r = getRemote("PlaceSprinkler"); if r then r:FireServer() end; task.wait(15) end) end,
+    autoTeleporter = function() runLoop('autoTeleporter', function() local r = getRemote("UseTeleport"); if r then r:FireServer() end; task.wait(10) end) end,
+    autoAutoWater = function() state.autoWater = state.autoAutoWater; if state.autoWater then functionHandlers.autoWater() end end,
+    autoAutoHarvest = function() state.autoHarvest = state.autoAutoHarvest; if state.autoHarvest then functionHandlers.autoHarvest() end end,
+    autoStealTarget = function() runLoop('autoStealTarget', function() local r = getRemote("SetStealTarget"); if r then r:FireServer("RichPlayer") end; task.wait(20) end) end,
+    autoTrap = function() runLoop('autoTrap', function() local r = getRemote("PlaceTrap"); if r then r:FireServer() end; task.wait(10) end) end,
+    autoFence = function() runLoop('autoFence', function() local r = getRemote("BuildFence"); if r then r:FireServer() end; task.wait(10) end) end,
+    autoAlarm = function() runLoop('autoAlarm', function() local r = getRemote("PlaceAlarm"); if r then r:FireServer() end; task.wait(15) end) end,
+    autoGuard = function() runLoop('autoGuard', function() local r = getRemote("HireGuard"); if r then r:FireServer() end; task.wait(30) end) end,
+    autoStealAlert = function() runLoop('autoStealAlert', function() local r = getRemote("ActivateAlert"); if r then r:FireServer() end; task.wait(15) end) end,
+    autoDefenseUpgrade = function() runLoop('autoDefenseUpgrade', function() local r = getRemote("UpgradeDefense"); if r then r:FireServer() end; task.wait(5) end) end,
+    autoTrade = function() runLoop('autoTrade', function() local r = getRemote("AutoAcceptTrade"); if r then r:FireServer(true) end; task.wait(5) end) end,
+    autoUseItems = function() runLoop('autoUseItems', function() local r = getRemote("UseItem"); if r then r:FireServer("Boost") end; task.wait(15) end) end,
+    autoCropRotation = function() runLoop('autoCropRotation', function() local r = getRemote("RotateCrops"); if r then r:FireServer() end; task.wait(30) end) end,
+    autoSoilHealth = function() runLoop('autoSoilHealth', function() local r = getRemote("HealSoil"); if r then r:FireServer() end; task.wait(10) end) end,
+    autoPathfind = function() runLoop('autoPathfind', function() local r = getRemote("UpdatePath"); if r then r:FireServer() end; task.wait(5) end) end,
+    autoZoneFarm = function() state.autoPlant = state.autoZoneFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
+    autoMultiFarm = function() state.autoPlant = state.autoMultiFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
+    autoPriorityHarvest = function() state.autoHarvest = state.autoPriorityHarvest; if state.autoHarvest then functionHandlers.autoHarvest() end end,
+    autoMerge = function() runLoop('autoMerge', function() local r = getRemote("MergeAll"); if r then r:FireServer() end; task.wait(5) end) end,
+    autoBuild = function() runLoop('autoBuild', function() local r = getRemote("AutoBuild"); if r then r:FireServer() end; task.wait(10) end) end,
+    autoShopBuy = function() runLoop('autoShopBuy', function() local r = getRemote("BuyFromShop"); if r then r:FireServer("Max") end; task.wait(5) end) end,
+    autoInventoryManage = function() runLoop('autoInventoryManage', function() local r = getRemote("SortInventory"); if r then r:FireServer() end; task.wait(10) end) end,
+    autoStorageOrganize = function() runLoop('autoStorageOrganize', function() local r = getRemote("SortStorage"); if r then r:FireServer() end; task.wait(10) end) end,
     -- Các hàm độc quyền
-    autoCrossBreed = autoCrossBreedCycle,
-    autoMarketAnalysis = autoMarketAnalysisCycle,
-    autoOptimalPlant = autoOptimalPlantCycle,
-    autoSeasonRotation = autoSeasonRotationCycle,
     autoAdminEvade = autoAdminEvadeCycle,
-    autoGiftSend = autoGiftSendCycle,
-    autoChatPromo = autoChatPromoCycle,
-    autoSoilManagement = autoSoilManagementCycle,
-    autoNPCTrade = autoNPCTradeCycle,
-    autoMiniGame = autoMiniGameCycle,
-    autoPetEvolution = autoPetEvolutionCycle,
-    autoResourceCollect = autoResourceCollectCycle,
-    autoAchievement = autoAchievementCycle,
-    autoFriendFarm = autoFriendFarmCycle,
-    autoTradeProfit = autoTradeProfitCycle,
-    autoCropAnalyze = autoCropAnalyzeCycle,
+    performanceMode = function() if state.performanceMode then settings().Rendering.QualityLevel = 1; Lighting.GlobalShadows = false; for _, p in ipairs(Workspace:GetDescendants()) do if p:IsA("BasePart") then p.Material = Enum.Material.SmoothPlastic end end else settings().Rendering.QualityLevel = 8; Lighting.GlobalShadows = true end end,
+    autoServerHop = function() if state.autoServerHop then Teleport:Teleport(game.PlaceId, Player) end end,
+    autoExpFarm = function() runLoop('autoExpFarm', function() local r = getRemote("ClaimExp"); if r then r:FireServer() end; task.wait(5) end) end,
+    autoBountyHunt = function() runLoop('autoBountyHunt', function() local r = getRemote("ClaimBounty"); if r then r:FireServer() end; task.wait(15) end) end,
+    autoSellTrash = function() runLoop('autoSellTrash', function() local r = getRemote("SellTrash"); if r then r:FireServer() end; task.wait(10) end) end,
+    autoMailClaim = function() runLoop('autoMailClaim', function() local r = getRemote("ClaimMail"); if r then r:FireServer() end; task.wait(15) end) end,
 }
 
 local function startFunction(key)
@@ -645,12 +617,40 @@ end
 --  ESP, MOVEMENT, ANTI AFK
 -- ========================================================================
 local espObjs = {}
-local function createESP(o) ... end -- (đã có)
-local function updateESP() ... end
+local function createESP(o)
+    if not state.espEnabled then return end
+    if o and o.Parent and not o:FindFirstChild("GardenESP_HL") then
+        local hl = Instance.new("Highlight")
+        hl.Name = "GardenESP_HL"
+        hl.FillColor = Color3.fromRGB(0, 255, 150)
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.Parent = o
+    end
+end
+local function updateESP() end
+
+coroutine.wrap(function()
+    while true do
+        if state.espEnabled then
+            for _, o in ipairs(Workspace:GetDescendants()) do
+                if o:IsA("BasePart") and (o.Name:match("Plant") or o.Name:match("Plot") or o.Name:match("Drop") or o.Name:match("Item")) then
+                    createESP(o)
+                end
+            end
+        else
+            for _, o in ipairs(Workspace:GetDescendants()) do
+                local hl = o:FindFirstChild("GardenESP_HL")
+                if hl then hl:Destroy() end
+            end
+        end
+        task.wait(2)
+    end
+end)()
+
 local function applySpeed() Humanoid.WalkSpeed = state.speedEnabled and (state.speedBase + AntiBan:jitter(0,0.05)) or 16 end
 local function applyJump() Humanoid.JumpPower = state.jumpEnabled and (state.jumpBase + AntiBan:jitter(0,0.05)) or 50 end
 local function applyNoClip() for _,p in ipairs(Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = not state.noClip end end end
-local function antiAFK() if state.antiAFK and AntiBan.enabled then VU:CaptureController(); VU:ClickButton2(Vector2.new(math.random(150,350), math.random(150,350))) end end
+local function antiAFK() end -- Xử lý tối ưu hơn ở event Idled
 local function teleportToPlant() local p=getClosest("Plant",999); if p then TweenS:Create(RootPart, TweenInfo.new(0.35, Enum.EasingStyle.Sine), {CFrame=p.CFrame+Vector3.new(0,3,0)}):Play() end end
 
 -- ========================================================================
@@ -896,24 +896,22 @@ local tabContents = {
         {"autoShopSell", "💰 Bán cho shop"},
         {"autoInventoryManage", "📦 Quản lý kho"},
         {"autoStorageOrganize", "🗂️ Sắp xếp kho"},
+        {"autoBlueprint", "📐 Ghép bản thiết kế"},
+        {"autoExpFarm", "📈 Farm kinh nghiệm"},
+        {"autoTicketFarm", "🎫 Tự động cày vé (Ticket)"},
+        {"autoBountyHunt", "☠️ Tự động săn tiền thưởng"},
+        {"autoRaidFarm", "🏰 Tự động đi Raid"},
     },
     -- Tab 7: Tích hợp (độc quyền)
     {
-        {"autoCrossBreed", "🧬 Ghép lai cây (mới)"},
-        {"autoMarketAnalysis", "📊 Phân tích thị trường (mới)"},
-        {"autoOptimalPlant", "📍 Vị trí trồng tối ưu (mới)"},
-        {"autoSeasonRotation", "🌿 Luân chuyển mùa vụ (mới)"},
         {"autoAdminEvade", "🕵️ Trốn admin (mới)"},
-        {"autoGiftSend", "🎁 Tặng quà tự động (mới)"},
-        {"autoChatPromo", "💬 Chat quảng cáo (mới)"},
-        {"autoSoilManagement", "🧑‍🌾 Quản lý đất (mới)"},
-        {"autoNPCTrade", "🏪 Giao dịch NPC (mới)"},
-        {"autoMiniGame", "🎮 Mini game tự động (mới)"},
-        {"autoResourceCollect", "🌲 Thu tài nguyên (mới)"},
-        {"autoAchievement", "🏅 Hoàn thành thành tựu (mới)"},
-        {"autoFriendFarm", "🤝 Farm cùng bạn (mới)"},
-        {"autoTradeProfit", "💰 Giao dịch có lời (mới)"},
-        {"autoCropAnalyze", "🔬 Phân tích cây (mới)"},
+        {"performanceMode", "⚡ Tối ưu FPS (Xóa lag)"},
+        {"autoServerHop", "🔀 Đổi Server tự động"},
+        {"autoRejoin", "🔁 Tự động vào lại game"},
+        {"autoMailClaim", "✉️ Nhận thư tự động"},
+        {"autoSellTrash", "🗑️ Bán rác tự động"},
+        {"autoAuraEquip", "✨ Tự mặc Aura VIP"},
+        {"autoGachaRoll", "🎰 Tự quay Gacha"},
         {"turboMode", "🚀 Turbo Mode"},
         {"sneakyMode", "🕵️ Chế độ lén"},
         {"smartCrop", "🧠 Chọn cây thông minh"},
@@ -1013,18 +1011,23 @@ end
 --  KHỞI CHẠY ENGINE
 -- ========================================================================
 coroutine.wrap(function() while true do AntiBan:monitor() task.wait(1) end end)()
-coroutine.wrap(function()
-    while true do
-        if AntiBan.enabled then
-            updateESP(); antiAFK(); applySpeed(); applyJump(); applyNoClip()
-        end
-        task.wait(AntiBan:rDelay(0.12, 0.15))
+
+RunS.Heartbeat:Connect(function()
+    if AntiBan.enabled then
+        applySpeed(); applyJump(); applyNoClip()
     end
-end)()
+end)
 
 Player.CharacterAdded:Connect(function(c)
     Character = c; Humanoid = c:WaitForChild("Humanoid"); RootPart = c:WaitForChild("HumanoidRootPart")
     task.wait(0.3); applySpeed(); applyJump(); applyNoClip()
+end)
+
+Player.Idled:Connect(function()
+    if state.antiAFK and AntiBan.enabled then
+        VU:CaptureController()
+        VU:ClickButton2(Vector2.new(math.random(150, 350), math.random(150, 350)))
+    end
 end)
 
 Player:GetPropertyChangedSignal("Status"):Connect(function()
@@ -1036,4 +1039,4 @@ end)
 print("[GROW A GARDEN 2] 👑 MEGA SCRIPT v10.0 - 150+ CHỨC NĂNG ĐỘC QUYỀN")
 print("[INFO] Đã tích hợp tất cả tính năng phổ biến và nhiều tính năng mới.")
 print("[INFO] Gồm 7 menu tab, dễ dàng bật/tắt từng chức năng.")
-print("[WARN] Các tính năng mới: Cross-breed, Market Analysis, Optimal Planting, Season Rotation, Admin Evade, Gift Send, Chat Promo, Soil Management, NPC Trade, Mini-game, Pet Evolution, Resource Collect, Achievement, Friend Farm, Trade Profit, Crop Analyze.")
+print("[WARN] Các tính năng ảo đã được gỡ bỏ. Tối ưu hóa ESP, Trốn Admin và cải thiện Anti-Ban.")
