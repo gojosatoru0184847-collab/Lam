@@ -196,6 +196,8 @@ state = {
     -- === MENU 7: CÀI ĐẶT & TÍCH HỢP (ĐỘC QUYỀN) ===
     performanceMode = true, autoServerHop = false, autoRejoin = false,
     turboMode = false, sneakyMode = false, smartCrop = false,
+    autoZenEvent = false, autoCorruptionEvent = false, autoSuperAura = false,
+    autoMoonBloom = false, autoMushroom = false, autoAcorn = false,
     espEnabled = false, speedEnabled = false, jumpEnabled = false,
     noClip = false, antiAFK = false, farmLoop = false,
     autoAdminEvade = false, autoMailClaim = false,
@@ -666,7 +668,7 @@ local functionHandlers = {
                 if not AntiBan.enabled or (state.adminNear and state.autoAdminEvade) then break end
                 
                 pcall(function()
-                    local rareKeywords = {"Midas", "Bloodlit", "Starstruck", "Rainbow", "Gold", "Rare", "Event", "Hiếm", "Special", "Mythic"}
+                    local rareKeywords = {"Midas", "Bloodlit", "Starstruck", "Rainbow", "Gold", "Rare", "Event", "Hiếm", "Special", "Mythic", "Moon", "Acorn", "Mushroom", "Disco", "Eagle", "Corruption", "Zen"}
                     local drops = findObjs("Drop|Item|Seed|Hạt", state.farmRadius * 3)
                     for _, item in ipairs(drops) do
                         local isRare = false
@@ -710,6 +712,12 @@ local functionHandlers = {
     autoRainbowSeed = function() runLoop('autoRainbowSeed', function() local r = getRemote("PlantSpecial"); if r then r:FireServer("Rainbow") end; task.wait(5) end) end,
     autoGoldSeed = function() runLoop('autoGoldSeed', function() local r = getRemote("PlantSpecial"); if r then r:FireServer("Gold") end; task.wait(5) end) end,
     autoMutationPriority = function() runLoop('autoMutationPriority', function() local r = getRemote("SetMutation"); if r then r:FireServer(state.preferredMutation) end; task.wait(10) end) end,
+    autoMoonBloom = function() runLoop('autoMoonBloom', function() local r = getRemote("PlantSpecial"); if r then r:FireServer("MoonBloom") end; task.wait(5) end) end,
+    autoMushroom = function() runLoop('autoMushroom', function() local r = getRemote("PlantSpecial"); if r then r:FireServer("Mushroom") end; task.wait(5) end) end,
+    autoAcorn = function() runLoop('autoAcorn', function() local r = getRemote("PlantSpecial"); if r then r:FireServer("Acorn") end; task.wait(5) end) end,
+    autoZenEvent = function() runLoop('autoZenEvent', function() local r = getRemote("ZenEvent") or getRemote("EventAction"); if r then r:FireServer("Claim") end; task.wait(10) end) end,
+    autoCorruptionEvent = function() runLoop('autoCorruptionEvent', function() local r = getRemote("CorruptionEvent") or getRemote("EventAction"); if r then r:FireServer("Farm") end; task.wait(10) end) end,
+    autoSuperAura = function() runLoop('autoSuperAura', function() local r = getRemote("EquipAura") or getRemote("SuperAura"); if r then r:FireServer("Max") end; task.wait(15) end) end,
     autoWeatherSwitch = function() runLoop('autoWeatherSwitch', function() local r = getRemote("ChangeWeather"); if r then r:FireServer("Rain") end; task.wait(30) end) end,
     autoElectricFarm = function() state.autoPlant = state.autoElectricFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
     autoFrozenFarm = function() state.autoPlant = state.autoFrozenFarm; if state.autoPlant then functionHandlers.autoPlant() end end,
@@ -903,8 +911,8 @@ local function updateESP() end
 coroutine.wrap(function()
     while scriptActive do
         if state.espEnabled then
-            for _, o in ipairs(getCachedDescendants()) do
-                if o:IsA("BasePart") and (o.Name:match("Plant") or o.Name:match("Plot") or o.Name:match("Drop") or o.Name:match("Item")) then
+            for _, o in ipairs(getCachedParts()) do
+                if (o.Name:match("Plant") or o.Name:match("Plot") or o.Name:match("Drop") or o.Name:match("Item")) then
                     createESP(o)
                 end
             end
@@ -953,7 +961,7 @@ spectatorLabel.Position = UDim2.new(0, 5, 0, 5)
 spectatorLabel.BackgroundTransparency = 1
 spectatorLabel.TextColor3 = Color3.fromRGB(255, 120, 120)
 spectatorLabel.TextSize = 13
-spectatorLabel.Font = Enum.Font.TimesNewRoman
+    spectatorLabel.Font = Enum.Font.Roboto
 spectatorLabel.TextXAlignment = Enum.TextXAlignment.Left
 spectatorLabel.TextYAlignment = Enum.TextYAlignment.Top
 spectatorLabel.Parent = spectatorFrame
@@ -991,7 +999,7 @@ revenueLabel.BackgroundTransparency = 1
 revenueLabel.Text = "💵 Lợi nhuận: Đang tính..."
 revenueLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 revenueLabel.TextSize = 14
-revenueLabel.Font = Enum.Font.TimesNewRoman
+    revenueLabel.Font = Enum.Font.Roboto
 revenueLabel.TextXAlignment = Enum.TextXAlignment.Left
 revenueLabel.Parent = revenueFrame
 
@@ -1090,14 +1098,19 @@ mGradient.Parent = mainFrame
 local menuOpen = false
 mainFrame.Visible = false
 mainFrame.GroupTransparency = 1
+
+local targetSize = UDim2.new(0, 520, 0, 680)
+local closedSize = UDim2.new(0, 480, 0, 640)
+mainFrame.Size = closedSize
+
 local function toggleUI(show)
     menuOpen = show
-    local info = TweenInfo.new(0.3, Enum.EasingStyle.Quad)
+    local info = TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
     if show then
         mainFrame.Visible = true
-        TweenS:Create(mainFrame, info, {GroupTransparency = 0}):Play()
+        TweenS:Create(mainFrame, info, {GroupTransparency = 0, Size = targetSize}):Play()
     else
-        local tween = TweenS:Create(mainFrame, info, {GroupTransparency = 1})
+        local tween = TweenS:Create(mainFrame, info, {GroupTransparency = 1, Size = closedSize})
         tween:Play()
         tween.Completed:Connect(function()
             if not menuOpen then mainFrame.Visible = false end
@@ -1116,7 +1129,7 @@ title.BackgroundTransparency = 1
 title.Text = "💼 GAG2 BUSINESS HUB - HỆ THỐNG KINH DOANH 💼"
 title.TextColor3 = Color3.fromRGB(255, 215, 0)
 title.TextScaled = true
-title.Font = Enum.Font.TimesNewRoman
+    title.Font = Enum.Font.RobotoBold
 title.Parent = mainFrame
 
 -- Watermark Bản Quyền
@@ -1127,20 +1140,18 @@ watermark.BackgroundTransparency = 1
 watermark.Text = "© Made by Hoàng Lâm"
 watermark.TextColor3 = Color3.fromRGB(255, 215, 0)
 watermark.TextSize = 12
-watermark.Font = Enum.Font.TimesNewRoman
+    watermark.Font = Enum.Font.Roboto
 watermark.Parent = mainFrame
 
 -- Drag
-local drag = Instance.new("TextButton")
-drag.Size = UDim2.new(0, 35, 0, 35)
-drag.Position = UDim2.new(1, -120, 0, 2)
-drag.BackgroundTransparency = 1
-drag.Text = "⏶"
-drag.TextColor3 = Color3.fromRGB(255,255,255)
-drag.TextScaled = true
-drag.Parent = mainFrame
+    local drag = Instance.new("Frame")
+    drag.Size = UDim2.new(1, -100, 0, 42)
+    drag.Position = UDim2.new(0, 0, 0, 0)
+    drag.BackgroundTransparency = 1
+    drag.Active = true
+    drag.Parent = mainFrame
 local dragging = false
-drag.MouseButton1Down:Connect(function() dragging = true end)
+    drag.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true end end)
 UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
 UIS.InputChanged:Connect(function(i)
     if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
@@ -1156,7 +1167,7 @@ minimizeBtn.BackgroundTransparency = 1
 minimizeBtn.Text = "—"
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.TextSize = 20
-minimizeBtn.Font = Enum.Font.TimesNewRoman
+    minimizeBtn.Font = Enum.Font.Roboto
 minimizeBtn.Parent = mainFrame
 
 local isMinimized = false
@@ -1171,6 +1182,9 @@ minimizeBtn.MouseButton1Click:Connect(function()
     minimizeBtn.Text = isMinimized and "□" or "—"
 end)
 
+    minimizeBtn.MouseEnter:Connect(function() TweenS:Create(minimizeBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 215, 0)}):Play() end)
+    minimizeBtn.MouseLeave:Connect(function() TweenS:Create(minimizeBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play() end)
+
 -- Close Button
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 35, 0, 35)
@@ -1180,6 +1194,9 @@ closeBtn.Text = "❌"
 closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
 closeBtn.TextScaled = true
 closeBtn.Parent = mainFrame
+
+    closeBtn.MouseEnter:Connect(function() TweenS:Create(closeBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 100, 100)}):Play() end)
+    closeBtn.MouseLeave:Connect(function() TweenS:Create(closeBtn, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 70, 70)}):Play() end)
 
 closeBtn.MouseButton1Click:Connect(function()
     scriptActive = false
@@ -1252,11 +1269,19 @@ local function createTabButton(name, index)
     btn.Text = name
     btn.TextColor3 = Color3.fromRGB(255,255,255)
     btn.TextSize = 13
-    btn.Font = Enum.Font.TimesNewRoman
+        btn.Font = Enum.Font.Roboto
     local bCorner = Instance.new("UICorner")
     bCorner.CornerRadius = UDim.new(0, 6)
     bCorner.Parent = btn
     btn.Parent = tabContainer
+
+        btn.MouseEnter:Connect(function()
+            if currentTab ~= index then TweenS:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 55, 65)}):Play() end
+        end)
+        btn.MouseLeave:Connect(function()
+            if currentTab ~= index then TweenS:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 38, 48)}):Play() end
+        end)
+
     btn.MouseButton1Click:Connect(function()
         currentTab = index
         for i, b in ipairs(tabButtons) do
@@ -1275,7 +1300,7 @@ for i = 1, #tabNames do
     sc.BackgroundTransparency = 1
     sc.BorderSizePixel = 0
     sc.CanvasSize = UDim2.new(0, 0, 0, 2000)
-    sc.ScrollBarThickness = 8
+        sc.ScrollBarThickness = 4
     sc.ScrollBarImageColor3 = Color3.fromRGB(255, 215, 0)
     sc.Visible = (i == 1)
     sc.Parent = mainFrame
@@ -1299,7 +1324,7 @@ local function createToggle(parent, y, label, stateKey, callback)
     lbl.TextColor3 = Color3.fromRGB(220, 225, 230)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextSize = 14
-    lbl.Font = Enum.Font.TimesNewRoman
+        lbl.Font = Enum.Font.Roboto
     lbl.Parent = container
 
     local switchBg = Instance.new("TextButton")
@@ -1369,7 +1394,7 @@ local function createSlider(parent, y, label, stateKey, min, max, callback)
     lbl.TextColor3 = Color3.fromRGB(220, 225, 230)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextSize = 14
-    lbl.Font = Enum.Font.TimesNewRoman
+        lbl.Font = Enum.Font.Roboto
     lbl.Parent = container
 
     local valLbl = Instance.new("TextLabel")
@@ -1380,7 +1405,7 @@ local function createSlider(parent, y, label, stateKey, min, max, callback)
     valLbl.TextColor3 = Color3.fromRGB(255, 215, 0)
     valLbl.TextXAlignment = Enum.TextXAlignment.Right
     valLbl.TextSize = 14
-    valLbl.Font = Enum.Font.TimesNewRoman
+        valLbl.Font = Enum.Font.Roboto
     valLbl.Parent = container
 
     local track = Instance.new("TextButton")
@@ -1429,12 +1454,18 @@ local tabContents = {
         {"autoCollect", "🎒 Tự động nhặt vật phẩm"},
         {"autoUpgrade", "⬆️ Đầu tư nâng cấp"},
         {"autoSprinkler", "💦 Tự mua/Lắp Sprinkler"},
+        {"autoMultiFarm", "🚜 Multi-Farm (Nhiều ô đất)"},
+        {"autoZoneFarm", "🌍 Auto Zone Farm"},
+        {"autoCropRotation", "🔄 Luân canh cây trồng"},
+        {"autoSoilHealth", "🩹 Tự động hồi phục đất"},
     },
     -- Tab 2: Thương Mại (Bargaining)
     {
         {"autoBargain", "💬 Mặc cả với Steven (Max Profit)"},
         {"autoDailyDeal", "📅 Mua Daily Deal (Steven)"},
         {"autoSellTrash", "🗑️ Bán rác tự động"},
+        {"autoShopBuy", "🛍️ Tự động gom hàng Shop"},
+        {"autoTrade", "🤝 Tự động Accept Trade NPC"},
     },
     -- Tab 3: Đột Biến & Thời tiết
     {
@@ -1449,6 +1480,11 @@ local tabContents = {
         {"autoBloodlitFarm", "🌙 Farm đột biến Bloodlit"},
         {"autoMidasFarm", "👑 Farm đột biến Midas"},
         {"autoWeatherSwitch", "🔄 Chuyển thời tiết"},
+        {"autoMoonBloom", "🌸 Farm Moon Bloom (Sự kiện mới)"},
+        {"autoMushroom", "🍄 Farm Mushroom (Sự kiện mới)"},
+        {"autoAcorn", "🌰 Farm Acorn Fruit (Sự kiện mới)"},
+        {"autoZenEvent", "🧘 Auto Zen Event (Sự kiện mới)"},
+        {"autoCorruptionEvent", "🌘 Auto Corruption Update (Mới)"},
     },
     -- Tab 4: Trộm & Thủ (GAG 2 CORE)
     {
@@ -1460,6 +1496,8 @@ local tabContents = {
         {"autoAlarm", "🔔 Chuông báo động"},
         {"autoGuard", "🛡️ Vệ sĩ"},
         {"autoDefenseUpgrade", "⬆️ Nâng cấp phòng thủ"},
+        {"autoStealTarget", "🎯 Chỉ định mục tiêu giàu"},
+        {"autoStealAlert", "🚨 Kích hoạt cảnh báo"},
     },
     -- Tab 5: Khai Thác Lỗi (Exploit)
     {
@@ -1475,6 +1513,16 @@ local tabContents = {
         {"autoOpenChests", "🎁 Mở Rương Map"},
         {"autoPetFeed", "🍖 Cho Pet Ăn"},
         {"autoPetTame", "🦮 Bắt Pet Tự Động"},
+        {"autoPetLevel", "⭐ Tự Nâng Cấp Pet"},
+        {"autoPetEvolve", "🔥 Tự Tiến Hóa Pet"},
+        {"autoSuperAura", "✨ Tự Động Bật Super Auras (Mới)"},
+        {"autoSpin", "🎡 Quay Vòng Quay May Mắn"},
+        {"autoQuest", "📜 Tự Động Làm Nhiệm Vụ"},
+        {"autoWeeklyQuest", "🏆 Tự Làm Nhiệm Vụ Tuần"},
+        {"autoStorage", "🧳 Tự Cất Đồ Vào Kho"},
+        {"autoInventoryManage", "🎒 Tự Sắp Xếp Túi Đồ"},
+        {"autoGuildContribute", "🛡️ Tự Cống Hiến Guild"},
+        {"autoMerge", "🧩 Tự Động Ghép Đồ (Merge)"},
     },
     -- Tab 7: Tích hợp (độc quyền)
     {
@@ -1486,6 +1534,7 @@ local tabContents = {
         {"autoRejoin", "🔁 Tự động vào lại game"},
         {"autoMailClaim", "✉️ Nhận thư tự động"},
         {"autoSellTrash", "🗑️ Bán rác tự động"},
+        {"autoWebhook", "📡 Báo cáo Discord (Webhook)"},
         {"turboMode", "🚀 Turbo Mode"},
         {"sneakyMode", "🕵️ Chế độ lén"},
         {"smartCrop", "🧠 Chọn cây thông minh"},
@@ -1522,7 +1571,7 @@ for tabIdx, content in ipairs(tabContents) do
             lbl.TextColor3 = Color3.fromRGB(255, 200, 100)
             lbl.TextXAlignment = Enum.TextXAlignment.Left
             lbl.TextScaled = true
-            lbl.Font = Enum.Font.TimesNewRoman
+                lbl.Font = Enum.Font.Roboto
             lbl.Parent = container
 
             local btn = Instance.new("TextButton")
@@ -1534,8 +1583,15 @@ for tabIdx, content in ipairs(tabContents) do
             btn.Text = "OFF"
             btn.TextColor3 = Color3.fromRGB(255, 200, 100)
             btn.TextScaled = true
-            btn.Font = Enum.Font.TimesNewRoman
+                btn.Font = Enum.Font.Roboto
             btn.Parent = container
+
+        container.MouseEnter:Connect(function()
+            TweenS:Create(lbl, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        end)
+        container.MouseLeave:Connect(function()
+            TweenS:Create(lbl, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 200, 100)}):Play()
+        end)
 
             btn.MouseButton1Click:Connect(function()
                 state.farmLoop = not state.farmLoop
@@ -1618,12 +1674,15 @@ end
 
 -- Fix lỗi Rejoin tránh việc gọi GetPropertyChangedSignal không tồn tại
 pcall(function()
-    local promptOverlay = game:GetService("CoreGui"):WaitForChild("RobloxPromptGui"):WaitForChild("promptOverlay")
-    table.insert(connections, promptOverlay.ChildAdded:Connect(function(child)
-        if child.Name == "ErrorPrompt" and state.autoRejoin then
-            Teleport:Teleport(game.PlaceId, Player)
-        end
-    end))
+    local robloxPrompt = game:GetService("CoreGui"):WaitForChild("RobloxPromptGui", 3)
+    local promptOverlay = robloxPrompt and robloxPrompt:WaitForChild("promptOverlay", 3)
+    if promptOverlay then
+        table.insert(connections, promptOverlay.ChildAdded:Connect(function(child)
+            if child.Name == "ErrorPrompt" and state.autoRejoin then
+                Teleport:Teleport(game.PlaceId, Player)
+            end
+        end))
+    end
 end)
 
 print("[GROW A GARDEN 2] 💼 BUSINESS HUB v10.0 - HỆ THỐNG KINH DOANH")
