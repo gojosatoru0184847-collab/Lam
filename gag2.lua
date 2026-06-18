@@ -102,24 +102,6 @@ function AntiBan:scan()
                 end
             end
             
-            -- PHÁT HIỆN ÁNH NHÌN (Line of Sight Detection): Có người đang nhìn chằm chằm về phía bạn
-            if p.Character and p.Character:FindFirstChild("Head") and RootPart and RootPart.Parent then
-                local head = p.Character.Head
-                local dirToUs = (RootPart.Position - head.Position).Unit
-                local dotProduct = head.CFrame.LookVector:Dot(dirToUs)
-                local dist = (RootPart.Position - head.Position).Magnitude
-                -- Nếu góc nhìn (Dot Product) > 0.75 (khoảng 40 độ) và trong bán kính 100 stud
-                if dotProduct > 0.75 and dist < 100 then
-                    local rayParams = RaycastParams.new()
-                    rayParams.FilterDescendantsInstances = {p.Character, Character}
-                    rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                    if not Workspace:Raycast(head.Position, dirToUs * dist, rayParams) then
-                        pThreat = pThreat + 2
-                        table.insert(self.currentThreats, "👁️ " .. p.Name .. " đang nhìn bạn!")
-                    end
-                end
-            end
-            
             -- Kiểm tra lịch sử gõ lệnh chat
             if chatThreats[p.Name] and os.time() < chatThreats[p.Name] then
                 pThreat = pThreat + 5
@@ -662,12 +644,14 @@ local functionHandlers = {
             end
         end
         if bestCrop then
-            local myPos = RootPart.Position
-            smartWalk(bestCrop.Position)
+            local myPos = RootPart.CFrame
+            TweenS:Create(RootPart, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {CFrame = bestCrop.CFrame + Vector3.new(0, 3, 0)}):Play()
+            task.wait(0.6)
             local rem = getRemote("Steal") or getRemote("HarvestOther")
             if rem then rem:FireServer(bestCrop) end
             task.wait(0.5)
-            smartWalk(myPos)
+            TweenS:Create(RootPart, TweenInfo.new(0.5, Enum.EasingStyle.Sine), {CFrame = myPos}):Play()
+            task.wait(0.6)
             notify("🌙 Trộm thành công!", "Đã ăn cắp trái giá trị và dịch chuyển về an toàn.")
         end
         task.wait(AntiBan:getMicroDelay(getDelay("steal")))
@@ -927,8 +911,8 @@ local function updateESP() end
 coroutine.wrap(function()
     while scriptActive do
         if state.espEnabled then
-            for _, o in ipairs(getCachedParts()) do
-                if (o.Name:match("Plant") or o.Name:match("Plot") or o.Name:match("Drop") or o.Name:match("Item")) then
+            for _, o in ipairs(getCachedDescendants()) do
+                if o:IsA("BasePart") and (o.Name:match("Plant") or o.Name:match("Plot") or o.Name:match("Drop") or o.Name:match("Item")) then
                     createESP(o)
                 end
             end
@@ -1473,7 +1457,6 @@ local tabContents = {
         {"autoMultiFarm", "🚜 Multi-Farm (Nhiều ô đất)"},
         {"autoZoneFarm", "🌍 Auto Zone Farm"},
         {"autoCropRotation", "🔄 Luân canh cây trồng"},
-        {"autoCrossBreed", "🧬 Tự động Lai Tạo Đột Biến"},
         {"autoSoilHealth", "🩹 Tự động hồi phục đất"},
     },
     -- Tab 2: Thương Mại (Bargaining)
@@ -1551,7 +1534,7 @@ local tabContents = {
         {"autoRejoin", "🔁 Tự động vào lại game"},
         {"autoMailClaim", "✉️ Nhận thư tự động"},
         {"autoSellTrash", "🗑️ Bán rác tự động"},
-        {"autoWebhook", "📡 Báo cáo Discord (Webhook)"},
+        {"remoteSpy", "🔎 Bật Remote Spy (Dò lỗi update)"},
         {"turboMode", "🚀 Turbo Mode"},
         {"sneakyMode", "🕵️ Chế độ lén"},
         {"smartCrop", "🧠 Chọn cây thông minh"},
@@ -1662,8 +1645,8 @@ end
 coroutine.wrap(function() while scriptActive do AntiBan:monitor() task.wait(1) end end)()
 
 table.insert(connections, RunS.Heartbeat:Connect(function()
-    if AntiBan.enabled then
-        applySpeed(); applyJump(); applyNoClip()
+    if AntiBan.enabled and (state.speedEnabled or state.jumpEnabled) then
+        applySpeed(); applyJump()
     end
 end))
 
