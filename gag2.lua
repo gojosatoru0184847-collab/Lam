@@ -134,6 +134,8 @@ end
 function AntiBan:monitor()
     while self.enabled do
         self:scan()
+        local success, err = pcall(function() self:scan() end)
+        if not success then warn("[AntiBan Error]:", err) end
         if self.adminNear then
             for k, v in pairs(state) do if type(v) == "boolean" then state[k] = false end end
             -- Tự động ẩn UI khi admin gần
@@ -142,6 +144,7 @@ function AntiBan:monitor()
             while self.adminNear and self.enabled do
                 task.wait(2)
                 self:scan()
+                pcall(function() self:scan() end)
             end
             if screenGui then screenGui.Enabled = true end
         end
